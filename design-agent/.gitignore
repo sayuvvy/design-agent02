@@ -1,0 +1,15 @@
+# Environment secrets - never commit
+.env
+*.env
+
+# Maven
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Logs
+*.log

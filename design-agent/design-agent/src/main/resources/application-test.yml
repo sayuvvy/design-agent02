@@ -1,0 +1,71 @@
+# ============================================================================
+# TEST profile — used by Maven Surefire during `mvn test`
+#
+# Uses dummy API keys so tests never hit real APIs or incur costs.
+# Disables MCP, tracing, and scheduling.
+# Uses in-memory SQLite (no file on disk).
+# ============================================================================
+
+spring:
+  ai:
+    anthropic:
+      api-key: sk-ant-test-dummy-key-for-unit-tests-only
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 100
+    openai:
+      api-key: sk-test-dummy-key
+      chat:
+        enabled: false
+      embedding:
+        enabled: false
+    ollama:
+      enabled: false
+    mcp:
+      client:
+        enabled: false
+
+  main:
+    allow-bean-definition-overriding: true
+
+server:
+  port: 0  # random port for tests
+
+agent:
+  ai:
+    provider: anthropic
+  memory:
+    max-messages: 10
+    short-term:
+      ttl-minutes: 5
+    long-term:
+      db-path: :memory:
+    semantic:
+      enabled: false
+  cache:
+    enabled: false
+    ttl-minutes: 1
+  telemetry:
+    cost:
+      input-per-million: 1.00
+      output-per-million: 5.00
+    budget:
+      daily-limit-usd: 0.01
+      alert-threshold: 0.8
+
+management:
+  tracing:
+    enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    agent:
+      enabled: false
+
+logging:
+  level:
+    com.agent: WARN
+    org.springframework.ai: WARN

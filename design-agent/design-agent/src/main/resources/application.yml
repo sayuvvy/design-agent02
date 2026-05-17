@@ -1,0 +1,143 @@
+server:
+  port: ${PORT:8081}
+
+spring:
+  application:
+    name: design-agent
+
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      timeout: 600s
+      chat:
+        options:
+          model: claude-opus-4-7
+          max-tokens: 16000
+
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-no-key-set}
+      # OpenAI is used ONLY for embeddings — NOT for chat
+      chat:
+        enabled: false
+      embedding:
+        options:
+          model: text-embedding-3-small
+
+    mcp:
+      client:
+        # Must be true for the design pipeline to work — requires npx + Node.js
+        enabled: ${MCP_ENABLED:true}
+        stdio:
+          servers:
+
+            # ------------------------------------------------------------------
+            # Jira Cloud MCP server
+            # Required env vars:
+            #   JIRA_URL      — e.g. https://yourcompany.atlassian.net
+            #   JIRA_USERNAME — your Atlassian account email
+            #   JIRA_API_TOKEN — create at https://id.atlassian.com/manage-profile/security/api-tokens
+            # ------------------------------------------------------------------
+            jira:
+              command: npx
+              args: [ "-y", "@modelcontextprotocol/server-jira" ]
+              env:
+                JIRA_URL: ${JIRA_URL}
+                JIRA_USERNAME: ${JIRA_USERNAME}
+                JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+
+            # ------------------------------------------------------------------
+            # GitHub MCP server (optional — useful for reading PR history)
+            # ------------------------------------------------------------------
+            # github:
+            #   command: npx
+            #   args: [ "-y", "@modelcontextprotocol/server-github" ]
+            #   env:
+            #     GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN:}
+
+agent:
+  ai:
+    provider: ${AGENT_AI_PROVIDER:anthropic}
+  skills:
+    directory: .claude/skills
+  memory:
+    max-messages: ${AGENT_MEMORY_WINDOW:50}
+    short-term:
+      ttl-minutes: 30
+    long-term:
+      db-path: ${AGENT_MEMORY_DB:./data/agent-memory.db}
+    semantic:
+      enabled: ${AGENT_SEMANTIC_MEMORY:false}
+      top-k: 5
+      max-chunk-chars: 2000
+  tool-call:
+    max-iterations: ${AGENT_TOOL_MAX_ITERATIONS:8}
+  token-limits:
+    default-max-tokens: ${AGENT_DEFAULT_MAX_TOKENS:4096}
+    fetchjira-max-tokens: ${AGENT_FETCHJIRA_MAX_TOKENS:2048}
+    analyze-max-tokens: ${AGENT_ANALYZE_MAX_TOKENS:4096}
+    crossref-max-tokens: ${AGENT_CROSSREF_MAX_TOKENS:4096}
+    design-max-tokens: ${AGENT_DESIGN_MAX_TOKENS:6144}
+    publish-max-tokens: ${AGENT_PUBLISH_MAX_TOKENS:4096}
+  cache:
+    enabled: ${AGENT_CACHE_ENABLED:true}
+    ttl-minutes: ${AGENT_CACHE_TTL:60}
+  # ------------------------------------------------------------------
+  # Scan limits — control how many files and lines Claude reads
+  # per codebase complexity tier. Tune these without a rebuild.
+  # Override via env vars: AGENT_SCAN_SIMPLE_FILES=10, etc.
+  # ------------------------------------------------------------------
+  scan:
+    simple:
+      max-files: ${AGENT_SCAN_SIMPLE_FILES:10}
+      max-lines: ${AGENT_SCAN_SIMPLE_LINES:500}
+    medium:
+      max-files: ${AGENT_SCAN_MEDIUM_FILES:18}
+      max-lines: ${AGENT_SCAN_MEDIUM_LINES:200}
+    complex:
+      max-files: ${AGENT_SCAN_COMPLEX_FILES:25}
+      max-lines: ${AGENT_SCAN_COMPLEX_LINES:120}
+  telemetry:
+    cost:
+      input-per-million: 1.00
+      output-per-million: 5.00
+      cache-read-per-million: 0.10
+    budget:
+      daily-limit-usd: ${AGENT_DAILY_BUDGET:5.00}
+      alert-threshold: 0.8
+
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  level:
+    com.agent: DEBUG
+    org.springframework.ai: INFO
+    io.modelcontextprotocol: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+  ai:
+    anthropic:
+      api-key: test-api-key-not-real
+    mcp:
+      client:
+        enabled: false
+
+management:
+  tracing:
+    enabled: false

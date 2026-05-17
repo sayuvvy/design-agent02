@@ -1,0 +1,6 @@
+{
+  "sessionId": "test-session-001",
+  "phase": "ANALYZE",
+  "repoPath": "c:/Users/Yuvaraj.Arumugam/Workspace/20APR26/design-agent01/design-agent",
+  "issues": "Analyze the design-agent codebase for architecture improvements"
+}

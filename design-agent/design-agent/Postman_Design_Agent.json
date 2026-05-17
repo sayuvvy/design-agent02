@@ -1,0 +1,74 @@
+{
+  "postman_collection_version": "2.1.0",
+  "info": {
+    "name": "Design Agent API",
+    "description": "API endpoints for the design agent"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8091/actuator/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8091",
+          "path": ["actuator", "health"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Codebase (with repo path)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"postman-test-001\",\n  \"phase\": \"ANALYZE\",\n  \"repoPath\": \"c:/Users/Yuvaraj.Arumugam/Workspace/20APR26/design-agent01/design-agent\",\n  \"issues\": \"Analyze the design-agent Spring Boot application for architecture improvements and design patterns\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8091/api/design/analyze",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8091",
+          "path": ["api", "design", "analyze"]
+        }
+      }
+    },
+    {
+      "name": "Telemetry - Usage Stats",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8091/api/telemetry/usage",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8091",
+          "path": ["api", "telemetry", "usage"]
+        }
+      }
+    },
+    {
+      "name": "Telemetry - Embeddings Cost",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8091/api/telemetry/embeddings",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8091",
+          "path": ["api", "telemetry", "embeddings"]
+        }
+      }
+    }
+  ]
+}

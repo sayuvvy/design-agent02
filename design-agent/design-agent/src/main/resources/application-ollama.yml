@@ -1,0 +1,40 @@
+# ============================================================================
+# OLLAMA profile — use a local Ollama LLM (100% free, no API key needed)
+#
+# Usage:
+#   1. Install Ollama: https://ollama.com/download
+#   2. Pull a model:   ollama pull qwen2.5-coder:14b
+#   3. Start agent:    java -jar target/design-agent-1.0.0-SNAPSHOT.jar \
+#                        --spring.profiles.active=local,ollama
+#
+# Recommended models for code analysis (tool-calling support):
+#   - qwen2.5-coder:14b    (best tool-calling, 14B params, ~9GB RAM)
+#   - llama3.1:8b           (good general purpose, 8B params, ~5GB RAM)
+#   - deepseek-coder-v2:16b (strong code understanding, ~10GB RAM)
+#   - mistral:7b            (fast, smaller, 7B params, ~4GB RAM)
+#
+# Note: Tool-calling quality varies by model. Qwen 2.5 Coder has the
+# best tool-calling support among open models as of 2026.
+# ============================================================================
+
+spring:
+  ai:
+    anthropic:
+      # Disable Anthropic when using Ollama
+      enabled: false
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_MODEL:qwen2.5-coder:14b}
+          temperature: 0.1
+          num-ctx: 32768
+
+agent:
+  ai:
+    provider: ollama
+  tool-call:
+    max-iterations: 3
+  cache:
+    enabled: true
+    ttl-minutes: 120

@@ -1,0 +1,130 @@
+# ============================================================================
+# LOCAL profile — for development without real Jira or external services
+#
+# Usage:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+#   IntelliJ: Run config → Active profiles → local
+#   Environment: export SPRING_PROFILES_ACTIVE=local
+#
+# What this profile does:
+#   - Accepts ANTHROPIC_API_KEY from env (replace placeholder with real key)
+#   - Uses claude-haiku-4-5-20251001 (cheapest Claude model)
+#   - Disables Jira MCP server (no npx / Node.js required)
+#   - Enables response caching (avoids repeat LLM calls)
+#   - Caps tool-call iterations at 5 (reduces token usage)
+#   - Disables OTel tracing (no collector required)
+#   - Runs on port 8091
+#   - Enables DEBUG logging for com.agent and Spring AI
+#
+# To use Ollama (free, local) instead of Anthropic:
+#   java -jar target/design-agent-1.0.0-SNAPSHOT.jar \
+#     --spring.profiles.active=local,ollama
+# ============================================================================
+
+spring:
+  ai:
+    anthropic:
+      # Set ANTHROPIC_API_KEY env var, or replace placeholder below
+      api-key: ${ANTHROPIC_API_KEY:your-api-key-here}
+      timeout: 600s
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 8000
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-no-key-set}
+      chat:
+        enabled: false
+      embedding:
+        options:
+          model: text-embedding-3-small
+    mcp:
+      client:
+        enabled: false
+
+server:
+  port: 8091
+
+agent:
+  ai:
+    provider: anthropic
+  skills:
+    directory: .claude/skills
+  memory:
+    # IMPORTANT: Keep low! Each message re-sent as input tokens.
+    # 50 msgs ≈ 25K input tokens. 500 was burning $2+/call!
+    max-messages: 50
+    short-term:
+      ttl-minutes: 30
+    long-term:
+      db-path: ./data/agent-memory.db
+    semantic:
+      enabled: true          # RAG indexing + search — uses OpenAI text-embedding-3-small
+      top-k: 5               # chunks returned per searchCodebase() call
+      max-chunk-chars: 3000  # max chars per file stored in vector (≈750 tokens)
+  tool-call:
+    max-iterations: 5
+
+  # ── Per-phase output token limits ──────────────────────────────
+  # These cap the MODEL'S OUTPUT per turn (not input).
+  # If logs show [TRUNCATION] WARN for a phase, raise its limit here.
+  #
+  # Sizing guide (Claude Haiku @ $1/$5 per M input/output tokens):
+  #   analyze : 6144 tokens ≈ 24K chars  — full structural analysis
+  #   crossref: 6144 tokens ≈ 24K chars  — per-requirement file mapping
+  #   design  : 8192 tokens ≈ 32K chars  — full design doc with all sections
+  #   publish : 4096 tokens ≈ 16K chars  — write commands only, no prose
+  token-limits:
+    default-max-tokens: 4096
+    fetchjira-max-tokens: 2048
+    analyze-max-tokens: 6144
+    crossref-max-tokens: 6144
+    design-max-tokens: 16000
+    publish-max-tokens: 4096
+
+  # Scan limits for local development — generous values for testing
+  scan:
+    simple:
+      max-files: 10
+      max-lines: 500
+    medium:
+      max-files: 18
+      max-lines: 200
+    complex:
+      max-files: 25
+      max-lines: 120
+
+  cache:
+    enabled: true
+    ttl-minutes: 60
+  telemetry:
+    cost:
+      # Claude Haiku 4.5 pricing (per million tokens)
+      input-per-million: 1.00
+      output-per-million: 5.00
+      cache-read-per-million: 0.10
+    budget:
+      daily-limit-usd: 5.00
+      alert-threshold: 0.8
+
+management:
+  tracing:
+    enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  health:
+    agent:
+      enabled: false
+
+logging:
+  level:
+    com.agent: DEBUG
+    org.springframework.ai: DEBUG
+    org.springaicommunity: DEBUG
