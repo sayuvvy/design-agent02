@@ -1,0 +1,113 @@
+# ============================================================================
+# PROD profile — Render free tier deployment
+#
+# Usage:
+#   Set env var: SPRING_PROFILES_ACTIVE=prod
+#   Render sets PORT automatically — no need to override.
+#
+# Key differences from local:
+#   - claude-haiku-4-5-20251001 (cheapest Claude model, stretches $10 API credits)
+#   - MCP disabled (avoids Node.js/npx overhead on 512MB container)
+#   - Semantic memory enabled (requires OPENAI_API_KEY for embeddings)
+#   - Long-term memory at /data/agent-memory.db
+#       NOTE: Render free tier has ephemeral filesystem — memory resets on
+#       redeploy. Add a Render Disk ($1/month) at /data to make it persist.
+#   - Logging at INFO (not DEBUG) — reduces noise and log storage
+#   - OTel tracing disabled (no collector on free tier)
+#   - Conservative daily budget ($2.00) to protect API credits
+#   - Cache TTL extended to 120 min (reduce repeat LLM calls)
+# ============================================================================
+
+spring:
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      timeout: 600s
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 16000
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-no-key-set}
+      chat:
+        enabled: false
+      embedding:
+        options:
+          model: text-embedding-3-small
+    mcp:
+      client:
+        enabled: false
+
+agent:
+  ai:
+    provider: anthropic
+  skills:
+    directory: .claude/skills
+  memory:
+    max-messages: 30
+    short-term:
+      ttl-minutes: 30
+    long-term:
+      db-path: ${AGENT_MEMORY_DB:/data/agent-memory.db}
+    semantic:
+      enabled: true
+      top-k: 5
+      max-chunk-chars: 2000
+  tool-call:
+    max-iterations: ${AGENT_TOOL_MAX_ITERATIONS:6}
+
+  token-limits:
+    default-max-tokens: 4096
+    fetchjira-max-tokens: 2048
+    analyze-max-tokens: 6144
+    crossref-max-tokens: 6144
+    design-max-tokens: 16000
+    publish-max-tokens: 4096
+
+  scan:
+    simple:
+      max-files: ${AGENT_SCAN_SIMPLE_FILES:10}
+      max-lines: ${AGENT_SCAN_SIMPLE_LINES:500}
+    medium:
+      max-files: ${AGENT_SCAN_MEDIUM_FILES:15}
+      max-lines: ${AGENT_SCAN_MEDIUM_LINES:150}
+    complex:
+      max-files: ${AGENT_SCAN_COMPLEX_FILES:20}
+      max-lines: ${AGENT_SCAN_COMPLEX_LINES:100}
+
+  cache:
+    enabled: true
+    ttl-minutes: 120
+
+  telemetry:
+    cost:
+      # claude-haiku-4-5 pricing (per million tokens)
+      input-per-million: 1.00
+      output-per-million: 5.00
+      cache-read-per-million: 0.10
+    budget:
+      daily-limit-usd: ${AGENT_DAILY_BUDGET:2.00}
+      alert-threshold: 0.8
+
+management:
+  tracing:
+    export:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+    prometheus:
+      enabled: false
+  health:
+    agent:
+      enabled: true
+
+logging:
+  level:
+    "[com.agent]": INFO
+    "[org.springframework.ai]": WARN
+    "[io.modelcontextprotocol]": WARN

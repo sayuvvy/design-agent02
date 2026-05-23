@@ -1,0 +1,23 @@
+# Source — only the packaged JAR is needed
+src/
+.claude/
+data/
+
+# Maven build artifacts except the final JAR
+target/maven-status/
+target/test-classes/
+target/jacoco.exec
+target/*.jar.original
+target/classes/
+
+# IDE and OS
+.idea/
+*.iml
+.DS_Store
+
+# Scripts and docs
+*.bat
+*.ps1
+*.md
+*.adoc
+*.json
