@@ -73,8 +73,8 @@ class DesignOrchestratorTest {
 
         baseRequest = new AgentRequest(
                 "session-1", null,
-                "/workspace/my-app", "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM
+                "/workspace/my-app", null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM
         );
 
         // Stub the chat client chain
@@ -175,7 +175,7 @@ class DesignOrchestratorTest {
         assertThat(response.designDocument()).isNotNull();
         assertThat(response.designDocument().updatedJiraTickets())
                 .containsExactly("MYAPP-1", "MYAPP-2");
-        verify(toolsFactory).publishTools(any());
+        verify(toolsFactory).jiraReadTools();
     }
 
     @Test
@@ -202,8 +202,8 @@ class DesignOrchestratorTest {
     void should_generateSessionId_when_null() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.ANALYZE,
-                "/workspace/app", "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                "/workspace/app", null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         AgentResponse response = orchestrator.execute(req);
 
@@ -224,7 +224,7 @@ class DesignOrchestratorTest {
     private AgentRequest withPhase(AgentPhase phase) {
         return new AgentRequest(
                 baseRequest.sessionId(), phase,
-                baseRequest.repoPath(), baseRequest.jiraProjectKey(),
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                baseRequest.repoPath(), null, null,
+                baseRequest.jiraProjectKey(), null, null, null, null, null, CodebaseComplexity.MEDIUM);
     }
 }

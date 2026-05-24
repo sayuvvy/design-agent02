@@ -21,11 +21,11 @@
 
 FROM eclipse-temurin:21-jre-jammy
 
-# --- Uncomment to enable MCP (Jira integration via npx) ---
-# RUN apt-get update && apt-get install -y curl && \
-#     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-#     apt-get install -y nodejs && \
-#     apt-get clean && rm -rf /var/lib/apt/lists/*
+# Node.js 20 — required for GitHub MCP server via npx
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Non-root user for security
 RUN groupadd -r agent && useradd -r -g agent agent

@@ -70,6 +70,19 @@ public class DesignToolsFactory {
     }
 
     /**
+     * ANALYZE phase — GitHub MCP mode.
+     * Uses GitHub MCP tools (get_file_contents, list_directory_tree, search_code)
+     * to read code directly from a GitHub repo URL — no local filesystem needed.
+     * Jira MCP tools are also included when available.
+     */
+    public Object[] githubCodeReadTools() {
+        List<Object> tools = new ArrayList<>();
+        mcpProvider.ifPresent(p ->
+                tools.addAll(Arrays.asList(p.getToolCallbacks())));
+        return tools.toArray();
+    }
+
+    /**
      * ANALYZE, CROSS_REF, DESIGN phases — read-only code tools.
      * Includes Jira MCP if available for issue detail lookups.
      * Used when RAG indexing is not available (semantic memory disabled).

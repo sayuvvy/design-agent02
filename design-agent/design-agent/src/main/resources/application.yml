@@ -46,13 +46,15 @@ spring:
                 JIRA_API_TOKEN: ${JIRA_API_TOKEN}
 
             # ------------------------------------------------------------------
-            # GitHub MCP server (optional — useful for reading PR history)
+            # GitHub MCP server — reads code from GitHub repos via API
+            # Required env var:
+            #   GITHUB_TOKEN — personal access token (leave unset for public repos)
             # ------------------------------------------------------------------
-            # github:
-            #   command: npx
-            #   args: [ "-y", "@modelcontextprotocol/server-github" ]
-            #   env:
-            #     GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN:}
+            github:
+              command: npx
+              args: [ "-y", "@modelcontextprotocol/server-github" ]
+              env:
+                GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN:}
 
 agent:
   ai:

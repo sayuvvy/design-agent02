@@ -20,12 +20,23 @@ class AgentRequestValidatorTest {
     @TempDir Path tempDir;
 
     @Test
-    @DisplayName("should pass for valid FULL request")
+    @DisplayName("should pass for valid FULL request with local repoPath")
     void should_pass_for_validFullRequest() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.FULL,
-                tempDir.toString(), "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                tempDir.toString(), null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
+
+        assertThatNoException().isThrownBy(() -> validator.validate(req));
+    }
+
+    @Test
+    @DisplayName("should pass for valid FULL request with repoUrl")
+    void should_pass_for_validFullRequest_withRepoUrl() {
+        AgentRequest req = new AgentRequest(
+                null, AgentPhase.FULL,
+                null, "https://github.com/owner/myapp", null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatNoException().isThrownBy(() -> validator.validate(req));
     }
@@ -35,19 +46,19 @@ class AgentRequestValidatorTest {
     void should_pass_for_fetchJira_withJiraKeyOnly() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.FETCH_JIRA,
-                null, "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                null, null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatNoException().isThrownBy(() -> validator.validate(req));
     }
 
     @Test
-    @DisplayName("should throw when repoPath missing for ANALYZE")
+    @DisplayName("should throw when neither repoPath nor repoUrl provided for ANALYZE")
     void should_throw_when_repoPath_missing_for_analyze() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.ANALYZE,
-                null, "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                null, null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatThrownBy(() -> validator.validate(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -59,8 +70,8 @@ class AgentRequestValidatorTest {
     void should_throw_when_repoPath_doesNotExist() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.ANALYZE,
-                "/no/such/path", "MYAPP",
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                "/no/such/path", null, null,
+                "MYAPP", null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatThrownBy(() -> validator.validate(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -72,8 +83,8 @@ class AgentRequestValidatorTest {
     void should_throw_when_jiraKey_missing_for_fetchJira() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.FETCH_JIRA,
-                null, null,
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                null, null, null,
+                null, null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatThrownBy(() -> validator.validate(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -85,8 +96,8 @@ class AgentRequestValidatorTest {
     void should_throw_when_jiraKey_missing_for_publish() {
         AgentRequest req = new AgentRequest(
                 null, AgentPhase.PUBLISH,
-                tempDir.toString(), null,
-                null, null, null, null, null, CodebaseComplexity.MEDIUM);
+                tempDir.toString(), null, null,
+                null, null, null, null, null, null, CodebaseComplexity.MEDIUM);
 
         assertThatThrownBy(() -> validator.validate(req))
                 .isInstanceOf(IllegalArgumentException.class)

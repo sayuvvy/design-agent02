@@ -9,6 +9,8 @@ import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -35,9 +37,6 @@ public class AgentConfig {
 
     @Bean
     public ChatMemory chatMemory() {
-        // IMPORTANT: Keep this LOW. Every message in the window is re-sent as
-        // input tokens on every LLM call. 50 messages ≈ 25K input tokens.
-        // At 500 messages you were burning 250K+ input tokens per call!
         log.info("ChatMemory window: {} messages (≈{}K input tokens per call)",
                 maxMessages, maxMessages / 2);
         return MessageWindowChatMemory.builder()
@@ -46,44 +45,50 @@ public class AgentConfig {
     }
 
     /**
-     * Per-phase max-token budgets (configurable via YAML):
-     *
-     *   agent.token-limits.analyze-max-tokens:  4096  (small codebase)
-     *   agent.token-limits.design-max-tokens:   6144  (needs more output)
-     *   agent.token-limits.default-max-tokens:  4096  (everything else)
-     *
-     * These are OUTPUT token caps — they limit how much the model writes
-     * per turn, NOT how much it reads. Input tokens are controlled by
-     * the memory window and prompt length.
+     * Per-phase output token budgets — provider-aware.
+     * Anthropic: maxTokens caps model output per turn.
+     * Ollama:    numCtx controls full context window; output is self-limited by the model.
      */
     @Bean
-    public AnthropicChatOptions analyzeOptions(
+    public ChatOptions analyzeOptions(
             @Value("${agent.token-limits.analyze-max-tokens:4096}") int maxTokens) {
-        return AnthropicChatOptions.builder().maxTokens(maxTokens).build();
+        return buildOptions(maxTokens);
     }
 
     @Bean
-    public AnthropicChatOptions crossRefOptions(
+    public ChatOptions crossRefOptions(
             @Value("${agent.token-limits.crossref-max-tokens:4096}") int maxTokens) {
-        return AnthropicChatOptions.builder().maxTokens(maxTokens).build();
+        return buildOptions(maxTokens);
     }
 
     @Bean
-    public AnthropicChatOptions designOptions(
+    public ChatOptions designOptions(
             @Value("${agent.token-limits.design-max-tokens:6144}") int maxTokens) {
-        return AnthropicChatOptions.builder().maxTokens(maxTokens).build();
+        return buildOptions(maxTokens);
     }
 
     @Bean
-    public AnthropicChatOptions publishOptions(
+    public ChatOptions publishOptions(
             @Value("${agent.token-limits.publish-max-tokens:4096}") int maxTokens) {
-        return AnthropicChatOptions.builder().maxTokens(maxTokens).build();
+        return buildOptions(maxTokens);
     }
 
     @Bean
-    public AnthropicChatOptions fetchJiraOptions(
+    public ChatOptions fetchJiraOptions(
             @Value("${agent.token-limits.fetchjira-max-tokens:2048}") int maxTokens) {
-        return AnthropicChatOptions.builder().maxTokens(maxTokens).build();
+        return buildOptions(maxTokens);
+    }
+
+    private ChatOptions buildOptions(int maxTokens) {
+        if ("ollama".equalsIgnoreCase(aiProvider)) {
+            return OllamaChatOptions.builder()
+                    .numCtx(32768)
+                    .temperature(0.1)
+                    .build();
+        }
+        return AnthropicChatOptions.builder()
+                .maxTokens(maxTokens)
+                .build();
     }
 
     @Bean
@@ -126,9 +131,7 @@ public class AgentConfig {
         }
 
         return ChatClient.builder(model)
-                .defaultOptions(AnthropicChatOptions.builder()
-                        .maxTokens(defaultMaxTokens)
-                        .build())
+                .defaultOptions(buildOptions(defaultMaxTokens))
                 .defaultAdvisors(
                         ToolCallAdvisor.builder()
                                 .build()

@@ -7,7 +7,7 @@
 #
 # Key differences from local:
 #   - claude-haiku-4-5-20251001 (cheapest Claude model, stretches $10 API credits)
-#   - MCP disabled (avoids Node.js/npx overhead on 512MB container)
+#   - MCP enabled with GitHub server (requires Node.js in container)
 #   - Semantic memory enabled (requires OPENAI_API_KEY for embeddings)
 #   - Long-term memory at /data/agent-memory.db
 #       NOTE: Render free tier has ephemeral filesystem — memory resets on
@@ -36,7 +36,14 @@ spring:
           model: text-embedding-3-small
     mcp:
       client:
-        enabled: false
+        enabled: true
+        stdio:
+          servers:
+            github:
+              command: npx
+              args: [ "-y", "@modelcontextprotocol/server-github" ]
+              env:
+                GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN:}
 
 agent:
   ai:

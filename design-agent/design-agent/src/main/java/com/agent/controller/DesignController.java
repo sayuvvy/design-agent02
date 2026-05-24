@@ -91,6 +91,7 @@ public class DesignController {
 
     private AgentRequest withPhase(AgentRequest req, AgentPhase phase) {
         return new AgentRequest(req.sessionId(), phase, req.repoPath(),
+                req.repoUrl(), req.githubToken(),
                 req.jiraProjectKey(), req.jiraSprintId(), req.jiraIssueKeys(), req.issues(),
                 req.outputDir(), req.context(), req.complexity());
     }

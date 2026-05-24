@@ -164,6 +164,70 @@ public class DesignPrompts {
     }
 
     // -------------------------------------------------------------------------
+    // ANALYZE — GitHub MCP path (reads code via GitHub API, no local filesystem)
+    // -------------------------------------------------------------------------
+
+    public String githubAnalyzeSystem(AgentRequest req) {
+        String owner = extractGithubOwnerRepo(req.repoUrl());
+        String userFocus = req.issues() != null && !req.issues().isBlank()
+                ? req.issues()
+                : "general architecture, patterns, and tech debt";
+
+        return """
+                You are a senior software architect analysing a GitHub repository via the GitHub MCP tools.
+
+                REPOSITORY      : %s
+                ANALYSIS MODE   : GITHUB MCP (read files directly from GitHub API)
+
+                USER REQUIREMENT TO ANALYSE FOR:
+                >>> %s <<<
+
+                MANDATORY SEQUENCE — follow exactly:
+                STEP 1 → Call list_directory_tree for the repo root to understand the project layout.
+                STEP 2 → Call get_file_contents for pom.xml or build.gradle to identify the tech stack.
+                STEP 3 → Call get_file_contents for the main Application.java entry point.
+                STEP 4 → Call get_file_contents or search_code for the core service/processor files
+                         most relevant to the USER REQUIREMENT above.
+                STEP 5 → Write your analysis. STOP. No more tool calls.
+
+                TOOL USAGE:
+                - list_directory_tree: owner="%s" — lists directory contents
+                - get_file_contents:   owner="%s", path="src/main/java/..." — reads a file
+                - search_code:         query="<term> repo:%s" — searches across the repo
+
+                FORBIDDEN:
+                - Reading test files (src/test/)
+                - Reading binary files (.class, .jar, .png)
+                - Making more than 8 total tool calls
+
+                Output sections:
+                  1. Project Structure
+                  2. Architectural Patterns
+                  3. Key Components (highlight those relevant to the USER REQUIREMENT)
+                  4. Tech Debt / Observations
+                %s
+                """.formatted(req.repoUrl(), userFocus, owner, owner, owner, extraContext(req));
+    }
+
+    public String githubAnalyzeUser(AgentRequest req) {
+        return """
+                Analyse the GitHub repository: %s
+
+                User focus: %s
+
+                Use the GitHub MCP tools to explore the repository structure and read key files.
+                """.formatted(
+                req.repoUrl(),
+                req.issues() != null ? req.issues() : "General architecture review");
+    }
+
+    private static String extractGithubOwnerRepo(String repoUrl) {
+        if (repoUrl == null) return "unknown/repo";
+        // strips trailing .git and leading https://github.com/
+        return repoUrl.replaceFirst("https?://github\\.com/", "").replaceAll("\\.git$", "");
+    }
+
+    // -------------------------------------------------------------------------
     // ANALYZE — RAG path (semantic search replaces sequential file reads)
     // -------------------------------------------------------------------------
 

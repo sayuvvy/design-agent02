@@ -12,8 +12,23 @@ public record AgentRequest(
 
         /**
          * Absolute path to the locally checked-out codebase.
+         * Mutually exclusive with repoUrl — provide one or the other.
          */
         String repoPath,
+
+        /**
+         * GitHub repository URL for hosted deployments (e.g. Render).
+         * When provided, the agent reads code via the GitHub MCP server
+         * instead of the local filesystem.
+         * Example: "https://github.com/owner/myapp"
+         */
+        String repoUrl,
+
+        /**
+         * GitHub Personal Access Token — required for private repos when repoUrl is set.
+         * Leave null for public repos.
+         */
+        String githubToken,
 
         /**
          * Jira Cloud project key — optional.
@@ -70,6 +85,25 @@ public record AgentRequest(
          */
         CodebaseComplexity complexity
 ) {
+    /** True when a GitHub URL is provided — use GitHub MCP for code reading. */
+    public boolean hasRepoUrl() {
+        return repoUrl != null && !repoUrl.isBlank();
+    }
+
+    /** True when a local path is provided — use filesystem tools for code reading. */
+    public boolean hasLocalRepo() {
+        return repoPath != null && !repoPath.isBlank();
+    }
+
+    /**
+     * Returns the effective repo identifier for cache keys and memory lookups.
+     * Prefers repoUrl when set, falls back to repoPath.
+     */
+    public String resolvedRepoKey() {
+        if (hasRepoUrl()) return repoUrl;
+        return repoPath;
+    }
+
     /** True when Jira MCP should be used for fetching issues. */
     public boolean hasJiraConfig() {
         return jiraProjectKey != null && !jiraProjectKey.isBlank();
@@ -83,7 +117,8 @@ public record AgentRequest(
     /** Resolve the effective output directory. */
     public String resolvedOutputDir() {
         if (outputDir != null && !outputDir.isBlank()) return outputDir;
-        return repoPath + "/docs/design";
+        if (hasLocalRepo()) return repoPath + "/docs/design";
+        return "/tmp/design";
     }
 
     /** Display name for the project — Jira key if available, else generic label. */

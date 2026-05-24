@@ -17,8 +17,8 @@ import com.agent.telemetry.TokenUsageTracker;
 import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -62,14 +62,15 @@ public class DesignOrchestrator {
     private final CodebaseComplexityAnalyzer complexityAnalyzer;
     private final CodebaseIndexingService indexingService;
 
-    // Per-phase token limits (injected from AgentConfig beans)
-    private final AnthropicChatOptions analyzeOptions;
-    private final AnthropicChatOptions crossRefOptions;
-    private final AnthropicChatOptions designOptions;
-    private final AnthropicChatOptions publishOptions;
-    private final AnthropicChatOptions fetchJiraOptions;
+    // Per-phase token limits (injected from AgentConfig beans — provider-agnostic)
+    private final ChatOptions analyzeOptions;
+    private final ChatOptions crossRefOptions;
+    private final ChatOptions designOptions;
+    private final ChatOptions publishOptions;
+    private final ChatOptions fetchJiraOptions;
 
-    @Value("${spring.ai.anthropic.chat.options.model:unknown}")
+    // Resolves model name from whichever provider is active
+    @Value("${spring.ai.anthropic.chat.options.model:${spring.ai.ollama.chat.options.model:unknown}}")
     private String modelName;
 
     private String requirementsSummary;
@@ -88,11 +89,11 @@ public class DesignOrchestrator {
                               TokenUsageTracker tokenTracker,
                               CodebaseComplexityAnalyzer complexityAnalyzer,
                               CodebaseIndexingService indexingService,
-                              @Qualifier("analyzeOptions") AnthropicChatOptions analyzeOptions,
-                              @Qualifier("crossRefOptions") AnthropicChatOptions crossRefOptions,
-                              @Qualifier("designOptions") AnthropicChatOptions designOptions,
-                              @Qualifier("publishOptions") AnthropicChatOptions publishOptions,
-                              @Qualifier("fetchJiraOptions") AnthropicChatOptions fetchJiraOptions) {
+                              @Qualifier("analyzeOptions") ChatOptions analyzeOptions,
+                              @Qualifier("crossRefOptions") ChatOptions crossRefOptions,
+                              @Qualifier("designOptions") ChatOptions designOptions,
+                              @Qualifier("publishOptions") ChatOptions publishOptions,
+                              @Qualifier("fetchJiraOptions") ChatOptions fetchJiraOptions) {
         this.chatClient = chatClient;
         this.prompts = prompts;
         this.toolsFactory = toolsFactory;
@@ -122,6 +123,7 @@ public class DesignOrchestrator {
             // Create new request with complexity detected
             request = new AgentRequest(
                 request.sessionId(), request.phase(), request.repoPath(),
+                request.repoUrl(), request.githubToken(),
                 request.jiraProjectKey(), request.jiraSprintId(), request.jiraIssueKeys(),
                 request.issues(), request.outputDir(), request.context(), complexity
             );
@@ -218,35 +220,22 @@ public class DesignOrchestrator {
     }
 
     private AgentResponse runAnalyze(AgentRequest request, String sessionId) {
-        log.info("[ANALYZE] session={} repo={}", sessionId, request.repoPath());
+        log.info("[ANALYZE] session={} repo={} repoUrl={}", sessionId, request.repoPath(), request.repoUrl());
+
+        String repoKey = request.resolvedRepoKey();
 
         // Check cache first
-        AgentResponse cached = cacheService.get(request.repoPath(), AgentPhase.ANALYZE, request.issues());
+        AgentResponse cached = cacheService.get(repoKey, AgentPhase.ANALYZE, request.issues());
         if (cached != null) {
             this.codebaseSummary = cached.output();
             return cached;
         }
 
         // Ensure short-term memory session exists
-        sessionMemory.getOrCreateSession(sessionId, request.repoPath());
+        sessionMemory.getOrCreateSession(sessionId, repoKey);
 
-        // ── RAG path: index once, search instead of sequential file reads ──────
-        boolean useRag = indexingService.isAvailable() && request.repoPath() != null;
-        if (useRag) {
-            if (!indexingService.isIndexed(request.repoPath())) {
-                log.info("[ANALYZE] RAG enabled — indexing codebase before analysis");
-                indexingService.indexCodebase(request.repoPath(), request.complexity());
-            } else {
-                log.info("[ANALYZE] RAG enabled — codebase already indexed, using vector search");
-            }
-        } else {
-            log.info("[ANALYZE] RAG not available — using sequential file reads (scan limits apply)");
-        }
-
-        // Enrich prompt with historical context (phase-output memories, NOT code chunks)
-        String historicalCtx = longTermMemory.buildHistoricalContext(request.repoPath());
-        // Semantic context scoped to THIS project's prior analysis outputs
-        String projectId = longTermMemory.computeProjectId(request.repoPath());
+        String historicalCtx = longTermMemory.buildHistoricalContext(repoKey);
+        String projectId = longTermMemory.computeProjectId(repoKey);
         String semanticCtx = semanticMemory.retrieveProjectKnowledge(projectId,
                 "codebase architecture analysis " + (request.issues() != null ? request.issues() : ""));
 
@@ -255,18 +244,40 @@ public class DesignOrchestrator {
         final Object[] tools;
         final String analysisMode;
 
-        if (useRag) {
-            CodebaseSearchTool searchTool = new CodebaseSearchTool(semanticMemory, projectId);
-            systemPrompt = prompts.ragAnalyzeSystem(request) + historicalCtx + semanticCtx;
-            userPrompt   = prompts.ragAnalyzeUser(request);
-            tools        = toolsFactory.ragAnalyzeTools(searchTool);
-            analysisMode = "RAG";
+        if (request.hasRepoUrl()) {
+            // ── GitHub MCP path: read code directly from GitHub via MCP tools ──
+            log.info("[ANALYZE] GitHub MCP mode — reading from {}", request.repoUrl());
+            systemPrompt = prompts.githubAnalyzeSystem(request) + historicalCtx + semanticCtx;
+            userPrompt   = prompts.githubAnalyzeUser(request);
+            tools        = toolsFactory.githubCodeReadTools();
+            analysisMode = "GITHUB-MCP";
         } else {
-            String previousCtx = sessionMemory.getPreviousContext(sessionId);
-            systemPrompt = prompts.analyzeSystem(request) + historicalCtx + semanticCtx;
-            userPrompt   = prompts.analyzeUser(request) + previousCtx;
-            tools        = toolsFactory.codeReadTools();
-            analysisMode = "SEQUENTIAL";
+            // ── Local path: RAG or sequential file reads ──────────────────────
+            boolean useRag = indexingService.isAvailable() && request.hasLocalRepo();
+            if (useRag) {
+                if (!indexingService.isIndexed(request.repoPath())) {
+                    log.info("[ANALYZE] RAG enabled — indexing codebase before analysis");
+                    indexingService.indexCodebase(request.repoPath(), request.complexity());
+                } else {
+                    log.info("[ANALYZE] RAG enabled — codebase already indexed, using vector search");
+                }
+            } else {
+                log.info("[ANALYZE] RAG not available — using sequential file reads (scan limits apply)");
+            }
+
+            if (useRag) {
+                CodebaseSearchTool searchTool = new CodebaseSearchTool(semanticMemory, projectId);
+                systemPrompt = prompts.ragAnalyzeSystem(request) + historicalCtx + semanticCtx;
+                userPrompt   = prompts.ragAnalyzeUser(request);
+                tools        = toolsFactory.ragAnalyzeTools(searchTool);
+                analysisMode = "RAG";
+            } else {
+                String previousCtx = sessionMemory.getPreviousContext(sessionId);
+                systemPrompt = prompts.analyzeSystem(request) + historicalCtx + semanticCtx;
+                userPrompt   = prompts.analyzeUser(request) + previousCtx;
+                tools        = toolsFactory.codeReadTools();
+                analysisMode = "SEQUENTIAL";
+            }
         }
 
         log.info("[ANALYZE] mode={} session={}", analysisMode, sessionId);
@@ -306,11 +317,11 @@ public class DesignOrchestrator {
                 .build());
 
         // Store phase output in semantic memory (distinct from codebase chunks)
-        semanticMemory.storeAnalysisKnowledge(projectId, request.repoPath(), "ANALYZE", output);
+        semanticMemory.storeAnalysisKnowledge(projectId, repoKey, "ANALYZE", output);
 
         AgentResponse response = AgentResponse.success(sessionId, AgentPhase.ANALYZE,
                 "Codebase analysed (" + analysisMode + ")", output);
-        cacheService.put(request.repoPath(), AgentPhase.ANALYZE, request.issues(), response);
+        cacheService.put(repoKey, AgentPhase.ANALYZE, request.issues(), response);
         return response;
     }
 

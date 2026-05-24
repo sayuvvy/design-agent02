@@ -24,20 +24,23 @@ public class AgentRequestValidator {
 
         AgentPhase phase = request.phase() != null ? request.phase() : AgentPhase.FULL;
 
-        // Validate repoPath for phases that need code access
+        // Validate code source for phases that need code access:
+        // accept a local repoPath OR a remote repoUrl (GitHub MCP), not neither.
         if (REPO_REQUIRED.contains(phase)) {
-            if (isBlank(request.repoPath())) {
+            if (!request.hasLocalRepo() && !request.hasRepoUrl()) {
                 throw new IllegalArgumentException(
-                        "repoPath is required for phase: " + phase);
+                        "Either repoPath (local) or repoUrl (GitHub) is required for phase: " + phase);
             }
-            Path root = Path.of(request.repoPath());
-            if (!Files.exists(root)) {
-                throw new IllegalArgumentException(
-                        "repoPath does not exist: " + request.repoPath());
-            }
-            if (!Files.isDirectory(root)) {
-                throw new IllegalArgumentException(
-                        "repoPath is not a directory: " + request.repoPath());
+            if (request.hasLocalRepo()) {
+                Path root = Path.of(request.repoPath());
+                if (!Files.exists(root)) {
+                    throw new IllegalArgumentException(
+                            "repoPath does not exist: " + request.repoPath());
+                }
+                if (!Files.isDirectory(root)) {
+                    throw new IllegalArgumentException(
+                            "repoPath is not a directory: " + request.repoPath());
+                }
             }
         }
 
