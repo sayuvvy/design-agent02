@@ -4,7 +4,9 @@ import com.agent.exception.AgentRequestValidator;
 import com.agent.model.AgentPhase;
 import com.agent.model.AgentRequest;
 import com.agent.model.AgentResponse;
+import com.agent.model.JobStatusResponse;
 import com.agent.orchestrator.DesignOrchestrator;
+import com.agent.service.DesignJobService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,30 +26,46 @@ public class DesignController {
 
     private final DesignOrchestrator orchestrator;
     private final AgentRequestValidator validator;
+    private final DesignJobService jobService;
 
     public DesignController(DesignOrchestrator orchestrator,
-                            AgentRequestValidator validator) {
+                            AgentRequestValidator validator,
+                            DesignJobService jobService) {
         this.orchestrator = orchestrator;
         this.validator = validator;
+        this.jobService = jobService;
     }
 
     /**
-     * Generic endpoint — phase in body controls what runs.
-     * Omit phase or set to FULL to run the entire pipeline.
+     * Submits a full pipeline run asynchronously and returns a jobId immediately.
+     * Poll GET /api/design/status/{jobId} until status is SUCCESS or FAILED.
      *
-     * Example:
+     * Example body:
      * {
-     *   "repoPath": "/workspace/my-app",
-     *   "jiraProjectKey": "MYAPP",
-     *   "jiraSprintId": "Sprint 42",       // optional
-     *   "jiraIssueKeys": ["MYAPP-101"],    // optional, narrows scope
-     *   "context": "Use hexagonal arch"    // optional
+     *   "repoUrl":  "https://github.com/owner/myapp",   // GitHub URL (Render)
+     *   "repoPath": "/workspace/my-app",                // or local path
+     *   "issues":   "Epic: ...\nStory: ...\nBug: ...",  // when Jira not configured
+     *   "complexity": "MEDIUM"
      * }
      */
     @PostMapping("/run")
-    public ResponseEntity<AgentResponse> run(@RequestBody AgentRequest request) {
+    public ResponseEntity<JobStatusResponse> run(@RequestBody AgentRequest request) {
         validator.validate(request);
-        return toHttp(orchestrator.execute(request));
+        String jobId = jobService.submit(request);
+        return ResponseEntity.accepted().body(JobStatusResponse.accepted(jobId));
+    }
+
+    /**
+     * Poll for job completion.
+     * Returns 200 with status=IN_PROGRESS while running,
+     * 200 with status=SUCCESS/FAILED and the full result when done,
+     * 404 when the jobId is unknown.
+     */
+    @GetMapping("/status/{jobId}")
+    public ResponseEntity<JobStatusResponse> status(@PathVariable String jobId) {
+        return jobService.getStatus(jobId)
+                .map(result -> ResponseEntity.ok(JobStatusResponse.done(jobId, result)))
+                .orElse(ResponseEntity.status(404).body(JobStatusResponse.notFound(jobId)));
     }
 
     @PostMapping("/fetch-jira")

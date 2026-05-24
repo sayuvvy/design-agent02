@@ -161,14 +161,16 @@ public class DesignOrchestrator {
             log.info("[FETCH_JIRA] session={} using user-provided issues", sessionId);
         }
 
+        String repoKey = request.resolvedRepoKey();
+
         sessionMemory.getOrCreateSession(sessionId,
-                request.repoPath() != null ? request.repoPath() : "no-repo");
+                repoKey != null ? repoKey : "no-repo");
 
         // ── Long-term: enrich system prompt with prior requirements history ──
-        String projectId = request.repoPath() != null
-                ? longTermMemory.computeProjectId(request.repoPath()) : null;
-        String historicalCtx = request.repoPath() != null
-                ? longTermMemory.buildHistoricalContext(request.repoPath()) : "";
+        String projectId = repoKey != null
+                ? longTermMemory.computeProjectId(repoKey) : null;
+        String historicalCtx = repoKey != null
+                ? longTermMemory.buildHistoricalContext(repoKey) : "";
 
         // ── Semantic: retrieve prior requirement patterns for this project ──
         String semanticCtx = (projectId != null)
@@ -201,7 +203,7 @@ public class DesignOrchestrator {
             longTermMemory.saveEntry(LongTermMemoryEntry.builder()
                     .id(sessionId + "-fetchjira")
                     .projectId(projectId)
-                    .repoPath(request.repoPath() != null ? request.repoPath() : "no-repo")
+                    .repoPath(repoKey != null ? repoKey : "no-repo")
                     .phase("FETCH_JIRA")
                     .summary(truncate(output, 500))
                     .keyFindings(truncate(output, 2000))
@@ -211,7 +213,7 @@ public class DesignOrchestrator {
 
             // ── Semantic: embed requirements for cross-project retrieval ──
             semanticMemory.storeAnalysisKnowledge(projectId,
-                    request.repoPath() != null ? request.repoPath() : "no-repo",
+                    repoKey != null ? repoKey : "no-repo",
                     "FETCH_JIRA", output);
         }
 
@@ -309,7 +311,7 @@ public class DesignOrchestrator {
         // Store in long-term memory
         longTermMemory.saveEntry(LongTermMemoryEntry.builder()
                 .id(sessionId + "-analyze")
-                .projectId(projectId).repoPath(request.repoPath())
+                .projectId(projectId).repoPath(repoKey)
                 .phase("ANALYZE").summary(truncate(output, 500))
                 .keyFindings(truncate(output, 2000))
                 .inputTokens(report.inputTokens()).outputTokens(report.outputTokens())
@@ -328,25 +330,27 @@ public class DesignOrchestrator {
     private AgentResponse runCrossRef(AgentRequest request, String sessionId) {
         log.info("[CROSS_REF] session={}", sessionId);
 
-        AgentResponse cached = cacheService.get(request.repoPath(), AgentPhase.CROSS_REF, request.issues());
+        String repoKey = request.resolvedRepoKey();
+
+        AgentResponse cached = cacheService.get(repoKey, AgentPhase.CROSS_REF, request.issues());
         if (cached != null) {
             this.crossRefSummary = cached.output();
             return cached;
         }
 
-        sessionMemory.getOrCreateSession(sessionId, request.repoPath());
+        sessionMemory.getOrCreateSession(sessionId, repoKey != null ? repoKey : "no-repo");
 
-        String projectId = longTermMemory.computeProjectId(request.repoPath());
-        String historicalCtx = longTermMemory.buildHistoricalContext(request.repoPath());
+        String projectId = longTermMemory.computeProjectId(repoKey);
+        String historicalCtx = longTermMemory.buildHistoricalContext(repoKey);
         String semanticCtx = semanticMemory.retrieveProjectKnowledge(projectId,
                 "cross reference requirements codebase " + (request.issues() != null ? request.issues() : ""));
 
         // ── Explicit full-content injection — NO 2000-char truncation ──────────
         // Short-term first; fall back to long-term SQLite if session expired/standalone
         String requirementsCtx = fullPhaseBlock("REQUIREMENTS",
-                resolvePhaseContent(sessionId, "FETCH_JIRA", request.repoPath()));
+                resolvePhaseContent(sessionId, "FETCH_JIRA", repoKey));
         String analyzeCtx = fullPhaseBlock("CODEBASE ANALYSIS",
-                resolvePhaseContent(sessionId, "ANALYZE", request.repoPath()));
+                resolvePhaseContent(sessionId, "ANALYZE", repoKey));
 
         long startMs = System.currentTimeMillis();
         ChatResponse chatResponse = chatClient.prompt()
@@ -372,45 +376,47 @@ public class DesignOrchestrator {
 
         longTermMemory.saveEntry(LongTermMemoryEntry.builder()
                 .id(sessionId + "-crossref")
-                .projectId(projectId).repoPath(request.repoPath())
+                .projectId(projectId).repoPath(repoKey)
                 .phase("CROSS_REF").summary(truncate(output, 500))
                 .keyFindings(truncate(output, 2000))
                 .inputTokens(report.inputTokens()).outputTokens(report.outputTokens())
                 .costUsd(report.totalCostUsd())
                 .build());
 
-        semanticMemory.storeAnalysisKnowledge(projectId, request.repoPath(), "CROSS_REF", output);
+        semanticMemory.storeAnalysisKnowledge(projectId, repoKey, "CROSS_REF", output);
 
         AgentResponse response = AgentResponse.success(sessionId, AgentPhase.CROSS_REF,
                 "Requirements cross-referenced with codebase", output);
-        cacheService.put(request.repoPath(), AgentPhase.CROSS_REF, request.issues(), response);
+        cacheService.put(repoKey, AgentPhase.CROSS_REF, request.issues(), response);
         return response;
     }
 
     private AgentResponse runDesign(AgentRequest request, String sessionId) {
         log.info("[DESIGN] session={}", sessionId);
 
-        AgentResponse cached = cacheService.get(request.repoPath(), AgentPhase.DESIGN, request.issues());
+        String repoKey = request.resolvedRepoKey();
+
+        AgentResponse cached = cacheService.get(repoKey, AgentPhase.DESIGN, request.issues());
         if (cached != null) {
             this.designContent = cached.output();
             return cached;
         }
 
-        sessionMemory.getOrCreateSession(sessionId, request.repoPath());
+        sessionMemory.getOrCreateSession(sessionId, repoKey != null ? repoKey : "no-repo");
 
-        String projectId = longTermMemory.computeProjectId(request.repoPath());
-        String historicalCtx = longTermMemory.buildHistoricalContext(request.repoPath());
+        String projectId = longTermMemory.computeProjectId(repoKey);
+        String historicalCtx = longTermMemory.buildHistoricalContext(repoKey);
         String semanticCtx = semanticMemory.retrieveProjectKnowledge(projectId,
                 "design architecture decisions patterns " + (request.issues() != null ? request.issues() : ""));
 
         // ── Explicit full-content injection — NO 2000-char truncation ──────────
         // Short-term first; fall back to long-term SQLite if session expired/standalone
         String requirementsCtx = fullPhaseBlock("REQUIREMENTS",
-                resolvePhaseContent(sessionId, "FETCH_JIRA", request.repoPath()));
+                resolvePhaseContent(sessionId, "FETCH_JIRA", repoKey));
         String analyzeCtx     = fullPhaseBlock("CODEBASE ANALYSIS",
-                resolvePhaseContent(sessionId, "ANALYZE", request.repoPath()));
+                resolvePhaseContent(sessionId, "ANALYZE", repoKey));
         String crossRefCtx    = fullPhaseBlock("CROSS-REFERENCE MAPPING",
-                resolvePhaseContent(sessionId, "CROSS_REF", request.repoPath()));
+                resolvePhaseContent(sessionId, "CROSS_REF", repoKey));
 
         long startMs = System.currentTimeMillis();
         ChatResponse chatResponse = chatClient.prompt()
@@ -436,7 +442,7 @@ public class DesignOrchestrator {
 
         longTermMemory.saveEntry(LongTermMemoryEntry.builder()
                 .id(sessionId + "-design")
-                .projectId(projectId).repoPath(request.repoPath())
+                .projectId(projectId).repoPath(repoKey)
                 .phase("DESIGN").summary(truncate(output, 500))
                 .keyFindings(truncate(output, 2000))
                 .decisions(output)   // full design — used by PUBLISH fallback
@@ -444,11 +450,11 @@ public class DesignOrchestrator {
                 .costUsd(report.totalCostUsd())
                 .build());
 
-        semanticMemory.storeAnalysisKnowledge(projectId, request.repoPath(), "DESIGN", output);
+        semanticMemory.storeAnalysisKnowledge(projectId, repoKey, "DESIGN", output);
 
         AgentResponse response = AgentResponse.success(sessionId, AgentPhase.DESIGN,
                 "Design synthesized", output);
-        cacheService.put(request.repoPath(), AgentPhase.DESIGN, request.issues(), response);
+        cacheService.put(repoKey, AgentPhase.DESIGN, request.issues(), response);
         return response;
     }
 
@@ -467,11 +473,11 @@ public class DesignOrchestrator {
         }
 
         // Tier 3: Long-term SQLite — for standalone /publish calls after app restart
-        if ((resolvedDesign == null || resolvedDesign.isBlank()) && request.repoPath() != null) {
-            resolvedDesign = longTermMemory.getLatestPhaseContent(request.repoPath(), "DESIGN");
+        String repoKey = request.resolvedRepoKey();
+        if ((resolvedDesign == null || resolvedDesign.isBlank()) && repoKey != null) {
+            resolvedDesign = longTermMemory.getLatestPhaseContent(repoKey, "DESIGN");
             if (resolvedDesign != null) {
-                log.info("[PUBLISH] Recovered design from long-term memory (SQLite) for repo={}",
-                        request.repoPath());
+                log.info("[PUBLISH] Recovered design from long-term memory (SQLite) for repo={}", repoKey);
             }
         }
 
@@ -519,11 +525,11 @@ public class DesignOrchestrator {
         sessionMemory.storePhaseOutput(sessionId, "PUBLISH", output);
 
         // ── Long-term: save publish log so we know what was written and when ──
-        if (request.repoPath() != null) {
-            String projectId = longTermMemory.computeProjectId(request.repoPath());
+        if (repoKey != null) {
+            String projectId = longTermMemory.computeProjectId(repoKey);
             longTermMemory.saveEntry(LongTermMemoryEntry.builder()
                     .id(sessionId + "-publish")
-                    .projectId(projectId).repoPath(request.repoPath())
+                    .projectId(projectId).repoPath(repoKey)
                     .phase("PUBLISH")
                     .summary("Published design.md to " + request.resolvedOutputDir())
                     .keyFindings(truncate(output, 1000))
@@ -552,8 +558,9 @@ public class DesignOrchestrator {
 
     private AgentResponse runFull(AgentRequest request, String sessionId) {
         log.info("[FULL] session={} starting pipeline", sessionId);
+        String repoKey = request.resolvedRepoKey();
         sessionMemory.getOrCreateSession(sessionId,
-                request.repoPath() != null ? request.repoPath() : "no-repo");
+                repoKey != null ? repoKey : "no-repo");
         runFetchRequirements(request, sessionId);
         runAnalyze(request, sessionId);
         runCrossRef(request, sessionId);
@@ -581,12 +588,12 @@ public class DesignOrchestrator {
      * Tier 2: long-term SQLite (prior runs on the same repo — cross-session fallback).
      * This ensures standalone phase calls benefit from all prior work.
      */
-    private String resolvePhaseContent(String sessionId, String phase, String repoPath) {
+    private String resolvePhaseContent(String sessionId, String phase, String repoKey) {
         String content = sessionMemory.getPhaseOutput(sessionId, phase);
         if (content != null && !content.isBlank()) return content;
 
-        if (repoPath != null) {
-            content = longTermMemory.getLatestPhaseContent(repoPath, phase);
+        if (repoKey != null) {
+            content = longTermMemory.getLatestPhaseContent(repoKey, phase);
             if (content != null && !content.isBlank()) {
                 log.info("[MEMORY-FALLBACK] {} for session={} recovered from long-term SQLite", phase, sessionId);
                 return content;
