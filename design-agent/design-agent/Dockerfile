@@ -1,24 +1,34 @@
 # ============================================================================
-# Design Agent — Dockerfile
+# Design Agent — Multi-stage Dockerfile
 # Target: Render free tier (512MB RAM)
 #
-# Build:
-#   mvn clean package -DskipTests
-#   docker build -t design-agent .
+# Stage 1 (builder): Maven + JDK 21 compiles the fat JAR
+# Stage 2 (runtime): JRE 21 + Node.js 20 runs it
+#
+# No pre-built JAR needed — Render runs docker build from source.
 #
 # Run locally:
+#   docker build -t design-agent .
 #   docker run -p 8081:8081 \
 #     -e ANTHROPIC_API_KEY=sk-ant-... \
 #     -e OPENAI_API_KEY=sk-... \
 #     -e SPRING_PROFILES_ACTIVE=prod \
 #     design-agent
-#
-# MCP/Jira note:
-#   MCP is disabled in the prod profile (MCP_ENABLED=false).
-#   To enable it, add Node.js 20 via the commented block below
-#   and set MCP_ENABLED=true in your env vars.
 # ============================================================================
 
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM maven:3.9-eclipse-temurin-21 AS builder
+
+WORKDIR /build
+
+# Cache dependency downloads separately from source compilation
+COPY pom.xml .
+RUN mvn dependency:go-offline -q
+
+COPY src ./src
+RUN mvn clean package -DskipTests -q
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-jammy
 
 # Node.js 20 — required for GitHub MCP server via npx
@@ -35,7 +45,7 @@ RUN mkdir -p /data && chown agent:agent /data
 
 WORKDIR /app
 
-COPY target/design-agent-1.0.0-SNAPSHOT.jar app.jar
+COPY --from=builder /build/target/design-agent-1.0.0-SNAPSHOT.jar app.jar
 RUN chown agent:agent app.jar
 
 USER agent
