@@ -4,21 +4,26 @@ import com.agent.exception.AgentRequestValidator;
 import com.agent.model.AgentPhase;
 import com.agent.model.AgentRequest;
 import com.agent.model.AgentResponse;
+import com.agent.model.AgentStatus;
 import com.agent.model.JobStatusResponse;
 import com.agent.orchestrator.DesignOrchestrator;
 import com.agent.service.DesignJobService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * REST API for the design pipeline.
  *
- * POST /api/design/run          — run a specific phase or full pipeline
- * POST /api/design/fetch-jira   — FETCH_JIRA phase only
- * POST /api/design/analyze      — ANALYZE phase only
- * POST /api/design/cross-ref    — CROSS_REF phase only
- * POST /api/design/design       — DESIGN phase only
- * POST /api/design/publish      — PUBLISH phase only
+ * POST /api/design/run              — async full pipeline; returns jobId immediately
+ * GET  /api/design/status/{jobId}   — poll for IN_PROGRESS / SUCCESS / FAILED (JSON)
+ * GET  /api/design/result/{jobId}   — download design.md as plain text when SUCCESS
+ * POST /api/design/fetch-jira       — FETCH_JIRA phase only
+ * POST /api/design/analyze          — ANALYZE phase only
+ * POST /api/design/cross-ref        — CROSS_REF phase only
+ * POST /api/design/design           — DESIGN phase only
+ * POST /api/design/publish          — PUBLISH phase only
  */
 @RestController
 @RequestMapping("/api/design")
@@ -66,6 +71,45 @@ public class DesignController {
         return jobService.getStatus(jobId)
                 .map(result -> ResponseEntity.ok(JobStatusResponse.done(jobId, result)))
                 .orElse(ResponseEntity.status(404).body(JobStatusResponse.notFound(jobId)));
+    }
+
+    /**
+     * Returns the finished design document as plain text (text/markdown).
+     * Use this after status returns SUCCESS — readable directly in Postman or a browser.
+     *
+     * 200 text/markdown  — design content
+     * 202 Accepted       — job still running
+     * 404                — jobId unknown
+     * 500                — job failed (body contains the error message)
+     */
+    @GetMapping("/result/{jobId}")
+    public ResponseEntity<String> result(@PathVariable String jobId) {
+        return jobService.getStatus(jobId).map(response -> {
+            if (response.status() == AgentStatus.IN_PROGRESS) {
+                return ResponseEntity.accepted()
+                        .<String>body("Job still running. Try again shortly.");
+            }
+            if (response.status() == AgentStatus.FAILED) {
+                return ResponseEntity.internalServerError()
+                        .<String>body("Job failed: " + response.error());
+            }
+            // SUCCESS — extract design content
+            String content = null;
+            if (response.designDocument() != null) {
+                content = response.designDocument().designDocContent();
+            }
+            if (content == null || content.isBlank()) {
+                content = response.output();
+            }
+            if (content == null || content.isBlank()) {
+                return ResponseEntity.noContent().<String>build();
+            }
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"design-" + jobId.substring(0, 8) + ".md\"")
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(content);
+        }).orElse(ResponseEntity.status(404).<String>body("Job not found: " + jobId));
     }
 
     @PostMapping("/fetch-jira")
