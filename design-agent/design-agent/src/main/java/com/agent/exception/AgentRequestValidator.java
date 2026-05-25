@@ -32,6 +32,12 @@ public class AgentRequestValidator {
                         "Either repoPath (local) or repoUrl (GitHub) is required for phase: " + phase);
             }
             if (request.hasLocalRepo()) {
+                // Guard: if the caller accidentally put a GitHub URL in repoPath, give a clear message
+                if (request.repoPath().startsWith("http://") || request.repoPath().startsWith("https://")) {
+                    throw new IllegalArgumentException(
+                            "repoPath looks like a URL — use the \"repoUrl\" field for GitHub repositories, not \"repoPath\". " +
+                            "repoPath is for local filesystem paths only.");
+                }
                 Path root = Path.of(request.repoPath());
                 if (!Files.exists(root)) {
                     throw new IllegalArgumentException(
